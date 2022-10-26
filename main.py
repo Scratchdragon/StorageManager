@@ -1,19 +1,36 @@
 from PyQt5.QtGui import QPainter, QBrush, QPen, QColor, QFont
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel
+
+# For command line args
 import sys
+
+# For getting disk usage
 import shutil
 
-App = QApplication(sys.argv)
-
+# Gets a tuple with the info we need
 disk_data = shutil.disk_usage("/")
 
+# Process the disk data into a more readable form
 total = disk_data[0] / float(10.0 ** 9.0)
 usage = disk_data[1] / float(10.0 ** 9.0)
 free = disk_data[2] / float(10.0 ** 9.0)
 ratio = usage / total
-print(usage)
-print(free)
+
+# Init the application
+App = QApplication(sys.argv)
+
+
+class StorageItem:
+    name = str()
+    usage = float()
+    percent = float()
+
+    def __init__(self, name, use):
+        self.name = name
+        self.usage = use
+        self.percent = use / usage
+
 
 class Window(QMainWindow):
     usage_label = QLabel()
@@ -34,7 +51,7 @@ class Window(QMainWindow):
         self.height = 500
 
         # Init the window
-        self.title = "PyQt5 Drawing Tutorial"
+        self.title = "Storage Manager"
         self.InitWindow()
 
         # Create labels
