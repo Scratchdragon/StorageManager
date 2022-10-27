@@ -1,13 +1,15 @@
+# PyQt Imports
 from PyQt5 import QtSvg
-from PyQt5.QtGui import QPainter, QBrush, QPen, QColor, QImage
-from PyQt5.QtCore import Qt, QTimer, QRectF
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QWidget, QPushButton
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QPainter, QBrush, QPen, QColor
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton
 
 # For command line args
 import sys
 
 # For getting disk usage
-import psutil, os
+import os
+import psutil
 
 
 # Colour class using RGB to simplify colour definitions
@@ -36,6 +38,17 @@ border_grey = Colour(83, 84, 86)
 grey = Colour(63, 64, 66)
 dark_grey = Colour(41, 42, 45)
 blue = Colour(138, 180, 248)
+
+
+def human_readable(num):
+    if num / float(10.0 ** 9.0) > 1:
+        return "%.1f GB" % (num / float(10.0 ** 9.0))
+    elif num / float(10.0 ** 6.0) > 1:
+        return "%.1f MB" % (num / float(10.0 ** 6.0))
+    elif num / float(10.0 ** 3.0) > 1:
+        return "%.1f KB" % (num / float(10.0 ** 3.0))
+    else:
+        return "%.1f B" % num
 
 
 def get_directory_usage(directory):
@@ -74,7 +87,11 @@ class StorageItem(QPushButton):
     hover = False
     index = 1
 
-    def __init__(self, name, directory, parent):
+    # Usage metrics
+    usage = 0
+    percent = 0
+
+    def __init__(self, name, directorys, parent):
         super().__init__(parent)
 
         # Constants for rendering
@@ -83,8 +100,11 @@ class StorageItem(QPushButton):
         hmargin = 40
 
         # Set variables from arguments
-        self.usage = get_directory_usage(directory) / float(10.0 ** 9.0)
-        self.percent = psutil.disk_usage(directory)[3]
+        for directory in directorys:
+            self.usage += psutil.disk_usage(directory)[1]
+            print(self.usage)
+
+        self.percent = self.usage / (usage * float(10.0 ** 9.0))
         self.name = name
 
         # Declare geometry
@@ -94,8 +114,8 @@ class StorageItem(QPushButton):
 
         # Set up labels
         self.name_label = QLabel(name, self)
-        self.usage_label = QLabel("%.1f GB" % self.usage, self)
-        self.percent_label = QLabel("%.1f%%" % self.percent, self)
+        self.usage_label = QLabel(human_readable(self.usage), self)
+        self.percent_label = QLabel("%.5f%%" % self.percent, self)
         self.name_label.setGeometry(hmargin, vmargin, self.name_label.width(), text_height)
         self.usage_label.setGeometry(hmargin, vmargin + text_height, self.usage_label.width(), text_height)
         self.percent_label.setGeometry(hmargin + 70, vmargin + text_height, self.usage_label.width(), text_height)
@@ -233,7 +253,7 @@ class Window(QMainWindow):
 
 window = Window()
 storage_items = [
-    StorageItem("Home", "/home/declan", window)
+    StorageItem("Home", ["/dev", "/run", "/run/lock"], window)
 ]
 i = 1
 for item in storage_items:
