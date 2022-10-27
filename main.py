@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton
 import sys
 
 # For getting disk usage
+from pathlib import Path
 import os
 import psutil
 import threading
@@ -15,17 +16,50 @@ import threading
 # Init the application
 App = QApplication(sys.argv)
 
-# Get platform
-platform = "unix"
-if os.name == "nt":
-    platform = "windows"
-print(f"Operating system: {os.name}, {platform} like")
-
 # Choose paths based on platform
-if platform == "windows":
+home = str(Path.home())
+if os.name == "nt":
     root = "C:\\"
+
+    app_dirs = []
+
+    user_dirs = [home]
+
+    temp_dirs = []
+
+    sys_dirs = os.listdir(root)
+    sys_dirs.remove("Users")
+    for i in range(0, len(sys_dirs)):
+        sys_dirs[i] = root + sys_dirs[i]
 else:
     root = "/"
+
+    app_dirs = [
+        "/usr/local",
+        "/usr/share",
+        home + "/.local",
+        "/opt"
+    ]
+
+    user_dirs = os.listdir(home)
+    user_dirs.remove(".local")
+    user_dirs.remove(".config")
+    for i in range(0, len(user_dirs)):
+        user_dirs[i] = home + "/" + user_dirs[i]
+
+    temp_dirs = [
+        "/tmp",
+        home + "/.config"
+    ]
+
+    sys_dirs = [
+        "etc"
+    ]
+    for i in range(0, len(sys_dirs)):
+        sys_dirs[i] = root + sys_dirs[i]
+    for item in os.listdir("/usr"):
+        if item != "share" and item != "local":
+            sys_dirs.append(f"/usr/{item}")
 
 
 # Colour class using RGB to simplify colour definitions
@@ -68,18 +102,19 @@ def human_readable(num):
 
 
 def async_directory_usage(directory, index):
-    size = 0
     for path, names, filenames in os.walk(directory):
         for f in filenames:
             fp = os.path.join(path, f)
 
-            # Avoid any symlinks
-            if not os.path.islink(fp):
+            # Avoid any symlinks or mount points
+            if not (os.path.islink(fp) or os.path.ismount(fp)):
                 try:
-                    size += os.path.getsize(fp)
+                    storage_items[index - 1].usage += os.path.getsize(fp)
                 except Exception as e:
                     print(e)
-                storage_items[index - 1].usage = size
+
+    storage_items[index - 1].thread_done = True
+    storage_items[index - 1].update_size()
 
 
 def get_directory_usage(directory):
@@ -87,8 +122,9 @@ def get_directory_usage(directory):
     for path, names, filenames in os.walk(directory):
         for f in filenames:
             fp = os.path.join(path, f)
-            # skip if it is symbolic link
-            if not os.path.islink(fp):
+
+            # Avoid any symlinks or mount points
+            if not (os.path.islink(fp) or os.path.ismount(fp)):
                 try:
                     size += os.path.getsize(fp)
                 except Exception as e:
@@ -117,16 +153,29 @@ class StorageItem(QPushButton):
     # Usage metrics
     usage = 0
     percent = 0
+    directories = list()
+
+    # For getting size
+    thread_done = False
 
     def queue_size_get(self):
-        for directory in self.directories:
-            self.tasks.append(threading.Thread(target=async_directory_usage, name=directory, args=[directory, self.index]))
-            self.tasks[len(self.tasks) - 1].start()
+        self.thread_done = False
+        self.thread = threading.Thread(target=async_directory_usage, name=self.directories[0],
+                                       args=[self.directories[0], self.index])
+        self.thread.start()
+
+    def update_size(self):
+        if self.thread_done and len(self.directories) > 1:
+            self.directories.pop(0)
+            self.queue_size_get()
 
     def update(self):
         self.percent = self.usage / (usage * float(1000 ** 3))
         self.usage_label.setText(human_readable(self.usage))
-        self.percent_label.setText("%.1f%%" % (self.percent * 100))
+        if self.thread_done:
+            self.percent_label.setText("%.1f%%" % (self.percent * 100))
+        else:
+            self.percent_label.setText("Calculating...")
         super(StorageItem, self).update()
 
     def __init__(self, name, directories, parent):
@@ -137,12 +186,12 @@ class StorageItem(QPushButton):
         vmargin = 15
         hmargin = 40
 
-        # Prototype tasks for queue_size_get()
-        self.tasks = list()
-
         # Set variables from arguments
         self.directories = directories
         self.name = name
+
+        # Prototype thread for queue_size_get()
+        self.thread = None
 
         # Declare geometry
         geometry = self.parent().geometry()
@@ -241,7 +290,7 @@ class Window(QMainWindow):
 
         # Update the window every second
         timer = QTimer(self)
-        timer.setInterval(1000)
+        timer.setInterval(200)
         timer.timeout.connect(self.updateAll)
         timer.start()
 
@@ -295,16 +344,21 @@ class Window(QMainWindow):
 
 window = Window()
 storage_items = [
-    StorageItem("Home", ["C:\\Users\\20043\\"], window)
+    StorageItem("System", sys_dirs, window),
+    StorageItem("Applications", app_dirs, window),
+    StorageItem("User data", temp_dirs, window),
+    StorageItem("My files", user_dirs, window)
 ]
 
 # Set the initial values
 get_usage()
 
+# Show all the storage items
 i = 1
 for item in storage_items:
     item.index = i
     item.queue_size_get()
     item.show()
     i = i + 1
+
 sys.exit(App.exec())
