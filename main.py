@@ -10,6 +10,22 @@ import sys
 # For getting disk usage
 import os
 import psutil
+import threading
+
+# Init the application
+App = QApplication(sys.argv)
+
+# Get platform
+platform = "unix"
+if os.name == "nt":
+    platform = "windows"
+print(f"Operating system: {os.name}, {platform} like")
+
+# Choose paths based on platform
+if platform == "windows":
+    root = "C:\\"
+else:
+    root = "/"
 
 
 # Colour class using RGB to simplify colour definitions
@@ -41,48 +57,59 @@ blue = Colour(138, 180, 248)
 
 
 def human_readable(num):
-    if num / float(10.0 ** 9.0) > 1:
-        return "%.1f GB" % (num / float(10.0 ** 9.0))
-    elif num / float(10.0 ** 6.0) > 1:
-        return "%.1f MB" % (num / float(10.0 ** 6.0))
-    elif num / float(10.0 ** 3.0) > 1:
-        return "%.1f KB" % (num / float(10.0 ** 3.0))
+    if num / float(1000 ** 3) > 1:
+        return "%.1f GB" % (num / float(1000 ** 3))
+    elif num / float(1000 * 2) > 1:
+        return "%.1f MB" % (num / float(1000 ** 2))
+    elif num / 1000 > 1:
+        return "%.1f KB" % (num / 1000)
     else:
         return "%.1f B" % num
 
 
+def async_directory_usage(directory, index):
+    size = 0
+    for path, names, filenames in os.walk(directory):
+        for f in filenames:
+            fp = os.path.join(path, f)
+
+            # Avoid any symlinks
+            if not os.path.islink(fp):
+                try:
+                    size += os.path.getsize(fp)
+                except Exception as e:
+                    print(e)
+                storage_items[index - 1].usage = size
+
+
 def get_directory_usage(directory):
     size = 0
-    for ele in os.scandir(directory):
-        add = 0
-        try:
-            add = os.stat(ele).st_size
-        except Exception as e:
-            print(e)
-        size += add
+    for path, names, filenames in os.walk(directory):
+        for f in filenames:
+            fp = os.path.join(path, f)
+            # skip if it is symbolic link
+            if not os.path.islink(fp):
+                try:
+                    size += os.path.getsize(fp)
+                except Exception as e:
+                    print(e)
     return size
 
 
 # Get disk usage
 def get_usage():
     # Gets a tuple with the info we need
-    disk_data = psutil.disk_usage("/")
+    disk_data = psutil.disk_usage(root)
 
     # Process the disk data into a more readable form
     global total, usage, free, ratio
-    total = disk_data[0] / float(10.0 ** 9.0)
-    usage = disk_data[1] / float(10.0 ** 9.0)
-    free = disk_data[2] / float(10.0 ** 9.0)
+    total = disk_data[0] / float(1000 ** 3)
+    usage = disk_data[1] / float(1000 ** 3)
+    free = disk_data[2] / float(1000 ** 3)
     ratio = disk_data[3] / 100
 
 
-# Set the initial values
-get_usage()
-
-# Init the application
-App = QApplication(sys.argv)
-
-
+# Classes
 class StorageItem(QPushButton):
     hover = False
     index = 1
@@ -91,7 +118,18 @@ class StorageItem(QPushButton):
     usage = 0
     percent = 0
 
-    def __init__(self, name, directorys, parent):
+    def queue_size_get(self):
+        for directory in self.directories:
+            self.tasks.append(threading.Thread(target=async_directory_usage, name=directory, args=[directory, self.index]))
+            self.tasks[len(self.tasks) - 1].start()
+
+    def update(self):
+        self.percent = self.usage / (usage * float(1000 ** 3))
+        self.usage_label.setText(human_readable(self.usage))
+        self.percent_label.setText("%.1f%%" % (self.percent * 100))
+        super(StorageItem, self).update()
+
+    def __init__(self, name, directories, parent):
         super().__init__(parent)
 
         # Constants for rendering
@@ -99,12 +137,11 @@ class StorageItem(QPushButton):
         vmargin = 15
         hmargin = 40
 
-        # Set variables from arguments
-        for directory in directorys:
-            self.usage += psutil.disk_usage(directory)[1]
-            print(self.usage)
+        # Prototype tasks for queue_size_get()
+        self.tasks = list()
 
-        self.percent = self.usage / (usage * float(10.0 ** 9.0))
+        # Set variables from arguments
+        self.directories = directories
         self.name = name
 
         # Declare geometry
@@ -115,7 +152,7 @@ class StorageItem(QPushButton):
         # Set up labels
         self.name_label = QLabel(name, self)
         self.usage_label = QLabel(human_readable(self.usage), self)
-        self.percent_label = QLabel("%.5f%%" % self.percent, self)
+        self.percent_label = QLabel("%.1f%%" % (self.percent * 100), self)
         self.name_label.setGeometry(hmargin, vmargin, self.name_label.width(), text_height)
         self.usage_label.setGeometry(hmargin, vmargin + text_height, self.usage_label.width(), text_height)
         self.percent_label.setGeometry(hmargin + 70, vmargin + text_height, self.usage_label.width(), text_height)
@@ -166,6 +203,11 @@ class Window(QMainWindow):
     free_label = QLabel()
     free_value_label = QLabel()
 
+    def updateAll(self):
+        self.update()
+        for storage in storage_items:
+            storage.update()
+
     def __init__(self):
         super().__init__()
 
@@ -200,7 +242,7 @@ class Window(QMainWindow):
         # Update the window every second
         timer = QTimer(self)
         timer.setInterval(1000)
-        timer.timeout.connect(self.update)
+        timer.timeout.connect(self.updateAll)
         timer.start()
 
     def updateLabels(self):
@@ -253,11 +295,16 @@ class Window(QMainWindow):
 
 window = Window()
 storage_items = [
-    StorageItem("Home", ["/dev", "/run", "/run/lock"], window)
+    StorageItem("Home", ["C:\\Users\\20043\\"], window)
 ]
+
+# Set the initial values
+get_usage()
+
 i = 1
 for item in storage_items:
     item.index = i
+    item.queue_size_get()
     item.show()
     i = i + 1
 sys.exit(App.exec())
