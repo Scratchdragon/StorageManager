@@ -1,8 +1,8 @@
 # PyQt Imports
 from PyQt5 import QtSvg
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPainter, QBrush, QPen, QColor
-from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton
+from PyQt5.QtGui import QPainter, QBrush, QPen, QColor, QCursor
+from PyQt5.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QAction, QMenu
 
 # For command line args
 import sys
@@ -43,13 +43,12 @@ else:
 
     user_dirs = os.listdir(home)
     user_dirs.remove(".local")
-    user_dirs.remove(".config")
     for i in range(0, len(user_dirs)):
         user_dirs[i] = home + "/" + user_dirs[i]
 
     temp_dirs = [
         "/tmp",
-        home + "/.config"
+        f"{home}/Trash"
     ]
 
     sys_dirs = [
@@ -101,20 +100,21 @@ def human_readable(num):
         return "%.1f B" % num
 
 
-def async_directory_usage(directory, index):
-    for path, names, filenames in os.walk(directory):
-        for f in filenames:
-            fp = os.path.join(path, f)
+def async_directory_usage(directories, index):
+    for directory in directories:
+        for path, names, filenames in os.walk(directory):
+            for f in filenames:
+                fp = os.path.join(path, f)
 
-            # Avoid any symlinks or mount points
-            if not (os.path.islink(fp) or os.path.ismount(fp)):
-                try:
+                # Avoid any symlinks
+                if not os.path.islink(fp):
                     storage_items[index - 1].usage += os.path.getsize(fp)
-                except Exception as e:
-                    print(e)
+
+            # Return if thread done
+            if storage_items[index - 1].thread_done:
+                return
 
     storage_items[index - 1].thread_done = True
-    storage_items[index - 1].update_size()
 
 
 def get_directory_usage(directory):
@@ -158,16 +158,25 @@ class StorageItem(QPushButton):
     # For getting size
     thread_done = False
 
-    def queue_size_get(self):
-        self.thread_done = False
-        self.thread = threading.Thread(target=async_directory_usage, name=self.directories[0],
-                                       args=[self.directories[0], self.index])
-        self.thread.start()
+    def contextMenuEvent(self, event):
+        if self.thread_done:
+            self.menu = QMenu(self)
+            refresh_action = QAction('Refresh', self)
+            refresh_action.triggered.connect(lambda: self.queue_size_get())
+            self.menu.addAction(refresh_action)
+            self.menu.addSeparator()
 
-    def update_size(self):
-        if self.thread_done and len(self.directories) > 1:
-            self.directories.pop(0)
-            self.queue_size_get()
+            for item in self.directories_pretty:
+                self.menu.addAction(QAction(str(item), self))
+
+            self.menu.popup(QCursor.pos())
+
+    def queue_size_get(self):
+        self.usage = 0
+        self.thread_done = False
+        self.thread = threading.Thread(target=async_directory_usage, name=self.name,
+                                       args=[self.directories, self.index])
+        self.thread.start()
 
     def update(self):
         self.percent = self.usage / (usage * float(1000 ** 3))
@@ -178,7 +187,7 @@ class StorageItem(QPushButton):
             self.percent_label.setText("Calculating...")
         super(StorageItem, self).update()
 
-    def __init__(self, name, directories, parent):
+    def __init__(self, name, directories, directories_pretty, parent):
         super().__init__(parent)
 
         # Constants for rendering
@@ -189,6 +198,7 @@ class StorageItem(QPushButton):
         # Set variables from arguments
         self.directories = directories
         self.name = name
+        self.directories_pretty = directories_pretty
 
         # Prototype thread for queue_size_get()
         self.thread = None
@@ -214,7 +224,7 @@ class StorageItem(QPushButton):
         self.percent_label.setStyleSheet("color: %s;" % light_grey.get_style() + "background-color: rgba(0,0,0,0);")
 
         # Set up open icon
-        self.link_icon = QtSvg.QSvgWidget("link.svg", self)
+        self.link_icon = QtSvg.QSvgWidget("src/link.svg", self)
         self.link_icon.setGeometry(geometry.width() - int(height / 2) - 8, int(height / 2) - 8, 16, 16)
         self.link_icon.setStyleSheet("background-color: rgba(0,0,0,0);")
         self.link_icon.show()
@@ -344,10 +354,10 @@ class Window(QMainWindow):
 
 window = Window()
 storage_items = [
-    StorageItem("System", sys_dirs, window),
-    StorageItem("Applications", app_dirs, window),
-    StorageItem("User data", temp_dirs, window),
-    StorageItem("My files", user_dirs, window)
+    StorageItem("System", sys_dirs, [root], window),
+    StorageItem("Applications", app_dirs, app_dirs, window),
+    StorageItem("Temporary files", temp_dirs, temp_dirs, window),
+    StorageItem("My files", user_dirs, [home], window)
 ]
 
 # Set the initial values
@@ -361,4 +371,10 @@ for item in storage_items:
     item.show()
     i = i + 1
 
-sys.exit(App.exec())
+end_code = App.exec()
+
+for item in storage_items:
+    item.thread_done = True
+    item.thread.join()
+
+sys.exit(end_code)
