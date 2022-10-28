@@ -81,6 +81,7 @@ border_grey = Colour(83, 84, 86)
 grey = Colour(63, 64, 66)
 dark_grey = Colour(41, 42, 45)
 blue = Colour(138, 180, 248)
+green = Colour(108, 248, 180)
 red = Colour(248, 180, 138)
 
 # Declare CSS
@@ -416,10 +417,10 @@ class Window(QMainWindow):
         # Draw selected bar
         if self.sel != 0:
             if self.sel > 0.1 or selected != 0:
-                painter.setPen(QPen(red.get_qcolor(), border, Qt.SolidLine))
+                painter.setPen(QPen(green.get_qcolor(), border, Qt.SolidLine))
             else:
-                painter.setPen(QPen(red.get_qcolor(), border * self.sel * 10, Qt.SolidLine))
-            painter.setBrush(QBrush(red.get_qcolor(), Qt.SolidPattern))
+                painter.setPen(QPen(green.get_qcolor(), border * self.sel * 10, Qt.SolidLine))
+            painter.setBrush(QBrush(green.get_qcolor(), Qt.SolidPattern))
             painter.drawRect(margin, margin, sel_bar_width, bar_height)
 
         # Draw labels
