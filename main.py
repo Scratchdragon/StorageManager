@@ -75,18 +75,40 @@ class Colour:
         return QColor.fromRgbF(self.r / 255, self.g / 255, self.b / 255, 1)
 
 
-# Disk usage variables
-total = float()
-usage = float()
-free = float()
-ratio = float()
-
 # Colour palette
 light_grey = Colour(189, 193, 198)
 border_grey = Colour(83, 84, 86)
 grey = Colour(63, 64, 66)
 dark_grey = Colour(41, 42, 45)
 blue = Colour(138, 180, 248)
+red = Colour(248, 180, 138)
+
+# Declare CSS
+CSS = """
+QMenu {
+    padding: 5px;
+    border: 1px solid """ + border_grey.get_style() + """;
+}
+QMenu::item {
+    padding: 5px;
+}
+QMenu::item:selected { 
+    background-color: """ + border_grey.get_style() + """;
+    color: white;
+}
+QMenu::separator {
+    height: 1px;
+    width: 100%;
+    background: """ + border_grey.get_style() + """;
+}
+"""
+App.setStyleSheet(CSS)
+
+# Disk usage variables
+total = float()
+usage = float()
+free = float()
+ratio = float()
 
 
 def human_readable(num):
@@ -145,6 +167,10 @@ def get_usage():
     ratio = disk_data[3] / 100
 
 
+# The selected storage item to be displayed
+selected = 0
+
+
 # Classes
 class StorageItem(QPushButton):
     hover = False
@@ -159,17 +185,22 @@ class StorageItem(QPushButton):
     thread_done = False
 
     def contextMenuEvent(self, event):
+        self.menu = QMenu(self)
         if self.thread_done:
-            self.menu = QMenu(self)
             refresh_action = QAction('Refresh', self)
             refresh_action.triggered.connect(lambda: self.queue_size_get())
             self.menu.addAction(refresh_action)
             self.menu.addSeparator()
 
-            for item in self.directories_pretty:
-                self.menu.addAction(QAction(str(item), self))
+        actions = list()
+        i = 0
+        for directory in self.directories_pretty:
+            actions.append(QAction(str(directory), self))
+            actions[i].triggered.connect(lambda: print(directory))
+            self.menu.addAction(actions[i])
+            i += 1
 
-            self.menu.popup(QCursor.pos())
+        self.menu.popup(QCursor.pos())
 
     def queue_size_get(self):
         self.usage = 0
@@ -235,6 +266,13 @@ class StorageItem(QPushButton):
     def leaveEvent(self, event):
         self.hover = False
 
+    def mouseReleaseEvent(self, event):
+        global selected
+        if selected == self.index:
+            selected = 0
+        else:
+            selected = self.index
+
     def paintEvent(self, event):
         # Update geometry
         geometry = self.parent().geometry()
@@ -262,7 +300,16 @@ class Window(QMainWindow):
     free_label = QLabel()
     free_value_label = QLabel()
 
+    sel = 0
+
     def updateAll(self):
+        if selected == 0:
+            if self.sel > 0.001:
+                self.sel = (self.sel * 9) / 10
+            else:
+                self.sel = 0
+        else:
+            self.sel = ((self.sel * 9) + storage_items[selected - 1].percent) / 10
         self.update()
         for storage in storage_items:
             storage.update()
@@ -276,15 +323,19 @@ class Window(QMainWindow):
         # Set up the window
         self.setWindowTitle("Storage Manager")
         self.setGeometry(150, 150, 750, 500)
+        self.setMinimumSize(250, 400)
         self.show()
 
         # Create labels
+        # Used space labels
         self.usage_label = QLabel("In use", self)
         self.usage_label.setStyleSheet("color: white;")
         self.usage_label.show()
         self.usage_value_label = QLabel("%.1f GB" % usage, self)
         self.usage_value_label.setStyleSheet("color: %s;" % light_grey.get_style())
         self.usage_value_label.show()
+
+        # Free space labels
         self.free_label = QLabel("Available", self)
         self.free_label.setStyleSheet("color: white;")
         self.free_label.show()
@@ -292,20 +343,42 @@ class Window(QMainWindow):
         self.free_value_label.setStyleSheet("color: %s;" % light_grey.get_style())
         self.free_value_label.show()
 
+        # selected space labels
+        self.sel_label = QLabel("", self)
+        self.sel_label.setStyleSheet("color: white;")
+        self.sel_value_label = QLabel("", self)
+        self.sel_value_label.setStyleSheet("color: %s;" % light_grey.get_style())
+
         # Set the alignment
         self.usage_label.setAlignment(Qt.AlignCenter)
         self.usage_value_label.setAlignment(Qt.AlignCenter)
         self.free_label.setAlignment(Qt.AlignCenter)
         self.free_value_label.setAlignment(Qt.AlignCenter)
+        self.sel_label.setAlignment(Qt.AlignCenter)
+        self.sel_value_label.setAlignment(Qt.AlignCenter)
 
-        # Update the window every second
-        timer = QTimer(self)
-        timer.setInterval(200)
-        timer.timeout.connect(self.updateAll)
-        timer.start()
+        # Update and animate everything
+        label_timer = QTimer(self)
+        label_timer.setInterval(10)
+        label_timer.timeout.connect(self.updateAll)
+        label_timer.start()
 
     def updateLabels(self):
-        self.usage_value_label.setText("%.1f GB" % usage)
+        real_sel = 0
+        if selected != 0:
+            if not self.sel_label.isVisible():
+                self.sel_label.show()
+                self.sel_value_label.show()
+            self.sel_label.setText(storage_items[selected - 1].name)
+            self.sel_value_label.setText(human_readable(storage_items[selected - 1].usage))
+
+            real_sel = storage_items[selected - 1].usage / float(1000 ** 3)
+
+        elif self.sel_label.isVisible():
+            self.sel_label.hide()
+            self.sel_value_label.hide()
+
+        self.usage_value_label.setText("%.1f GB" % (usage - real_sel))
         self.free_value_label.setText("%.1f GB" % free)
 
     def paintEvent(self, event):
@@ -315,6 +388,10 @@ class Window(QMainWindow):
 
         # Get the bar dimensions
         bar_width = int(ratio * (self.frameGeometry().width() - 80))
+        if self.sel != 0:
+            sel_bar_width = int(self.sel * ratio * (self.frameGeometry().width() - 80))
+        else:
+            sel_bar_width = 0
         bar_height = 30
         margin = 40
         border = 5
@@ -336,11 +413,20 @@ class Window(QMainWindow):
         painter.setBrush(QBrush(blue.get_qcolor(), Qt.SolidPattern))
         painter.drawRect(margin, margin, bar_width, bar_height)
 
+        # Draw selected bar
+        if self.sel != 0:
+            if self.sel > 0.1 or selected != 0:
+                painter.setPen(QPen(red.get_qcolor(), border, Qt.SolidLine))
+            else:
+                painter.setPen(QPen(red.get_qcolor(), border * self.sel * 10, Qt.SolidLine))
+            painter.setBrush(QBrush(red.get_qcolor(), Qt.SolidPattern))
+            painter.drawRect(margin, margin, sel_bar_width, bar_height)
+
         # Draw labels
         painter.setPen(QPen(grey.get_qcolor(), 2, Qt.SolidLine))
 
         # Used space
-        label_a_x = margin + int(bar_width / 2)
+        label_a_x = margin + int((bar_width + sel_bar_width) / 2)
         painter.drawLine(label_a_x, line_offset - 1, label_a_x, line_offset + line_length)
         self.usage_label.setGeometry(label_a_x - 20, line_offset + line_length + 5, 40, 10)
         self.usage_value_label.setGeometry(label_a_x - 30, line_offset + line_length + 22, 60, 10)
@@ -351,12 +437,19 @@ class Window(QMainWindow):
         self.free_label.setGeometry(label_b_x - 30, line_offset + line_length + 5, 60, 10)
         self.free_value_label.setGeometry(label_b_x - 30, line_offset + line_length + 22, 60, 10)
 
+        # Selected space
+        if selected != 0:
+            label_c_x = margin + int(sel_bar_width / 2)
+            painter.drawLine(label_c_x, line_offset - 1, label_c_x, line_offset + line_length)
+            self.sel_label.setGeometry(label_c_x - 50, line_offset + line_length, 100, 20)
+            self.sel_value_label.setGeometry(label_c_x - 30, line_offset + line_length + 22, 60, 10)
+
 
 window = Window()
 storage_items = [
     StorageItem("System", sys_dirs, [root], window),
     StorageItem("Applications", app_dirs, app_dirs, window),
-    StorageItem("Temporary files", temp_dirs, temp_dirs, window),
+    StorageItem("Temp files", temp_dirs, temp_dirs, window),
     StorageItem("My files", user_dirs, [home], window)
 ]
 
