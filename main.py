@@ -256,8 +256,8 @@ class StorageItem(QPushButton):
         self.percent_label.setStyleSheet("color: %s;" % light_grey.get_style() + "background-color: rgba(0,0,0,0);")
 
         # Set up open icon
-        if Path("/usr/share/abyss/storage-manager/").exists():
-            self.link_icon = QtSvg.QSvgWidget("/usr/share/abyss/storage-manager/src/link.svg", self)
+        if Path("/usr/share/storage-manager/").exists():
+            self.link_icon = QtSvg.QSvgWidget("/usr/share/storage-manager/src/link.svg", self)
         else:
             self.link_icon = QtSvg.QSvgWidget("src/link.svg", self)
         self.link_icon.setGeometry(geometry.width() - int(height / 2) - 8, int(height / 2) - 8, 16, 16)
