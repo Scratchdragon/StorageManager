@@ -186,22 +186,22 @@ class StorageItem(QPushButton):
     thread_done = False
 
     def contextMenuEvent(self, event):
-        self.menu = QMenu(self)
+        menu = QMenu(self)
         if self.thread_done:
             refresh_action = QAction('Refresh', self)
             refresh_action.triggered.connect(lambda: self.queue_size_get())
-            self.menu.addAction(refresh_action)
-            self.menu.addSeparator()
+            menu.addAction(refresh_action)
+            menu.addSeparator()
 
         actions = list()
         i = 0
         for directory in self.directories_pretty:
             actions.append(QAction(str(directory), self))
             actions[i].triggered.connect(lambda: print(directory))
-            self.menu.addAction(actions[i])
+            menu.addAction(actions[i])
             i += 1
 
-        self.menu.popup(QCursor.pos())
+        menu.popup(QCursor.pos())
 
     def queue_size_get(self):
         self.usage = 0
