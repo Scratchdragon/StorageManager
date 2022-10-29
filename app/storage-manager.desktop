@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Storage Manager
+Exec=python3 /usr/share/storage-manager/main.py
+Icon=preferences-system
+Type=Application
+Categories=System;
